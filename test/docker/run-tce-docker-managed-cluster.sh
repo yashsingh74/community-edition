@@ -9,7 +9,8 @@ set -x
 TCE_REPO_PATH="$(git rev-parse --show-toplevel)"
 
 "${TCE_REPO_PATH}/test/install-dependencies.sh"
-"${TCE_REPO_PATH}/test/build-tce.sh"
+export ALLOW_INSTALL_AS_ROOT="true"
+source "${TCE_REPO_PATH}/test/fetch-tce.sh"
 "${TCE_REPO_PATH}/test/install-jq.sh"
 
 random_id="${RANDOM}"
