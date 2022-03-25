@@ -57,7 +57,7 @@ sleep 2m
 
 kubectl get installedpackage,apps --all-namespaces
 
-tanzu cluster delete ${GUEST_CLUSTER_NAME} --yes
+tanzu cluster delete ${GUEST_CLUSTER_NAME} --yes -v9
 
 num_of_clusters=$(tanzu cluster list -o json | jq 'length')
 
@@ -70,6 +70,6 @@ done
 
 echo "Workload cluster ${GUEST_CLUSTER_NAME} successfully deleted"
 
-tanzu management-cluster delete ${MGMT_CLUSTER_NAME} --yes
+tanzu management-cluster delete ${MGMT_CLUSTER_NAME} --yes -v9
 
 echo "Management cluster ${MGMT_CLUSTER_NAME} successfully deleted"
