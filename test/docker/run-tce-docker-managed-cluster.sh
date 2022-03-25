@@ -52,6 +52,8 @@ tanzu package installed list
 
 kubectl -n fluent-bit get all
 
+sleep 10m
+
 kubectl get installedpackage,apps --all-namespaces
 
 tanzu cluster delete ${GUEST_CLUSTER_NAME} --yes
