@@ -38,7 +38,6 @@ const (
 	tkgCoreRepoName       = "tkg-core-repository"
 	tkgGlobalPkgNamespace = "tanzu-package-repo-global"
 	tceRepoName           = "community-repository"
-	tceRepoURL            = "projects.registry.vmware.com/tce/main:0.10.1"
 	outputIndent          = 3
 	maxProgressLength     = 4
 )
@@ -166,7 +165,7 @@ func (t *UnmanagedCluster) Deploy(scConfig *config.UnmanagedClusterConfig) (int,
 	log.Style(outputIndent, color.Faint).Infof("%s\n", t.bom.GetTKRCoreRepoBundlePath())
 	// core user package repositories
 	log.Event(logger.PackageEmoji, "Selected additional package repositories")
-	for _, additionalRepo := range t.bom.GetAdditionalRepoBundlesPaths() {
+	for _, additionalRepo := range scConfig.AdditionalPackageRepos {
 		log.Style(outputIndent, color.Faint).Infof("%s\n", additionalRepo)
 	}
 	// kapp-controller
@@ -218,8 +217,12 @@ func (t *UnmanagedCluster) Deploy(scConfig *config.UnmanagedClusterConfig) (int,
 	if err != nil {
 		return ErrCorePackageRepoInstall, fmt.Errorf("failed to install core package repo. Error: %s", err.Error())
 	}
-	for _, additionalRepo := range t.bom.GetAdditionalRepoBundlesPaths() {
-		_, err = createPackageRepo(pkgClient, tkgGlobalPkgNamespace, tceRepoName, additionalRepo)
+
+	// Install the additional package repos
+	for _, additionalRepo := range scConfig.AdditionalPackageRepos {
+		kappFriendlyRepoName := strings.ReplaceAll(additionalRepo, "/", "-")
+		kappFriendlyRepoName = strings.ReplaceAll(kappFriendlyRepoName, ":", "-")
+		_, err = createPackageRepo(pkgClient, tkgGlobalPkgNamespace, kappFriendlyRepoName, additionalRepo)
 		if err != nil {
 			return ErrOtherPackageRepoInstall, fmt.Errorf("failed to install adiditonal package repo. Error: %s", err.Error())
 		}
@@ -246,7 +249,7 @@ func (t *UnmanagedCluster) Deploy(scConfig *config.UnmanagedClusterConfig) (int,
 
 	// 8. Update kubeconfig and context
 	kubeConfigMgr := kubeconfig.NewManager()
-	err = mergeKubeconfigAndSetContext(kubeConfigMgr, scConfig.KubeconfigPath, scConfig.ClusterName)
+	err = mergeKubeconfigAndSetContext(kubeConfigMgr, scConfig.KubeconfigPath)
 	if err != nil {
 		log.Warnf("Failed to merge kubeconfig and set your context. Cluster should still work! Error: %s", err)
 	}
@@ -578,9 +581,18 @@ func runClusterCreate(scConfig *config.UnmanagedClusterConfig) (*cluster.Kuberne
 
 	clusterManager := cluster.NewClusterManager(scConfig)
 
+	for _, message := range clusterManager.ProviderNotify() {
+		log.Style(outputIndent, color.Faint).Info(message)
+	}
+
 	if !scConfig.SkipPreflightChecks {
-		if issues := clusterManager.PreflightCheck(); issues != nil {
+		warnings, issues := clusterManager.PreflightCheck()
+		if len(issues) > 0 {
 			return nil, fmt.Errorf("system checks detected issues, please resolve first: %v", issues)
+		}
+
+		for _, warning := range warnings {
+			log.Style(outputIndent, color.FgYellow).Warnf("WARNING: %s\n", warning)
 		}
 	}
 
@@ -791,15 +803,35 @@ infraProvider: docker
 	return nil
 }
 
-func mergeKubeconfigAndSetContext(mgr kubeconfig.Manager, kcPath, clusterName string) error {
+// GetKubeconfigContext returns the current context for a passed in kubeconfig file
+// This is a utility function that enables users of the `tanzu` packages
+// to utilize an existing cluster with an existing kubeconfig and get it's current context
+func ReadClusterContextFromKubeconfig(kcPath string) (string, error) {
+	ctx, err := kubeconfig.GetKubeconfigContext(kcPath)
+	if err != nil {
+		return "", fmt.Errorf("could not get context from kubeconfig found at %s - Error: %s", kcPath, err.Error())
+	}
+
+	if ctx == "" {
+		return "", fmt.Errorf("no current context set")
+	}
+
+	return ctx, nil
+}
+
+func mergeKubeconfigAndSetContext(mgr kubeconfig.Manager, kcPath string) error {
 	err := mgr.MergeToDefaultConfig(kcPath)
 	if err != nil {
 		log.Errorf("Failed to merge kubeconfig: %s\n", err.Error())
 		return nil
 	}
-	// TODO(joshrosso): we need to resolve this by introspecting the known kubeconfig
-	// 					we cannot assume this syntax will work!
-	kubeContextName := fmt.Sprintf("%s-%s", "kind", clusterName)
+
+	// Get the current kubeconfig context: this should be the newly created/attached cluster
+	kubeContextName, err := ReadClusterContextFromKubeconfig(kcPath)
+	if err != nil {
+		return err
+	}
+
 	err = mgr.SetCurrentContext(kubeContextName)
 	if err != nil {
 		return err
