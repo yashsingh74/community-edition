@@ -53,7 +53,7 @@ tanzu package installed list
 
 kubectl -n fluent-bit get all
 
-sleep 10m
+sleep 2m
 
 kubectl get installedpackage,apps --all-namespaces
 
